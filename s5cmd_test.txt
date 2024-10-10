@@ -1,0 +1,1 @@
+cp s3://dataset-artstation-uw2/artists/__andrey__/1841730##GZGgW.json .

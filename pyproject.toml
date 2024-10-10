@@ -1,0 +1,13 @@
+[tool.poetry]
+name = "s5cmdpy" 
+version = "0.2.6"
+description = "python binding for using s5cmd to download and upload files to s3 efficiently"
+authors = ["yada <trojblue@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
