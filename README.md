@@ -1,8 +1,5 @@
 # s5cmd-python
 
-**updated doc: check lark**: https://mufo9rl7c6.larksuite.com/wiki/DvgPwF3gKifmOWk2hNnuTkXXsVh?from=from_copylink
-
-
 python binding for using s5cmd to download and upload files to s3 efficiently
 
 The `S5CmdRunner` class provides a Python interface for interacting with `s5cmd`, a command-line tool designed for efficient data transfer to and from Amazon S3.
