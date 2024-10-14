@@ -58,6 +58,18 @@ txt_s3_uri = "s3://dataset-artstation-uw2/s5cmd_test.txt"
 runner.run(txt_s3_uri)
 ```
 
+Without any arguments, the progress bar created by `run()` assumes that each line in the txt is for downloading a single file, therefore n lines in txt will result in n lines of console output.
+
+For a more accurate progress bar, you can pass in the actual total number of files being downloaded, using the `total` argument:
+
+```python
+# the txt uses a wildcard to download multiple files, so 1 command downloads many files:
+# `cp s3://bucket-external/dataset/dataset_lcm/moonbeam_150k_min512x768/*.webp ./webps/`
+
+s5cmdpy.run("test_run_file.txt", total=10000)
+```
+
+
 ### Download Multiple Files from S3
 
 ```python
