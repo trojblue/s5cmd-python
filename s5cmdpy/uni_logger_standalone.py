@@ -16,7 +16,7 @@ https://github.com/trojblue/unibox/blob/d312ba96486b862b208665196822bc1cbea6c075
 
 
 class UniLogger:
-    """包含时间和 caller frame的 logger utils
+    """Simple logger utils with caller frame info
 
     VERSION: 2023.06.11 (JUNE)
 

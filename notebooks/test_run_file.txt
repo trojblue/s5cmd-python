@@ -1,0 +1,1 @@
+cp s3://bucket-external/dataset/dataset_lcm/moonbeam_150k_min512x768/*.webp ./webps/
