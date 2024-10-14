@@ -25,7 +25,7 @@ pip install s5cmdpy
 or from source:
 
 ```bash
-git clone <repo url>
+git clone https://github.com/trojblue/s5cmd-python
 cd s5cmd-python
 pip install -e .
 ```
@@ -73,7 +73,9 @@ runner.download_from_s3_list(s3_uris, destination_dir)
 ```
 
 ### Download a file from internet and upload to S3
+
 `cp` command also works with a file from internet:
+
 ```python
 # Download a file from internet and upload to S3
 target_url = "https://huggingface.co/kiriyamaX/mld-caformer/resolve/main/ml_caformer_m36_dec-5-97527.onnx"
@@ -82,7 +84,35 @@ dst_s3_uri = "s3://dataset-artstation-uw2/_dev/"
 runner.cp(target_url, dst_s3_uri)
 ```
 
+### List files under S3 Directory
+
+Uses s5cmd to efficiently list files under s3. Has around twice the speed compared to boto3:
+
+```python
+s3_uri = "s3://dataset-artstation-uw2/_dev/"
+files_under_dir = runner.ls(s3_uri)
+# returns Dict {"file_path": (size, date)}
+```
+
+### Quick use of the runner class
+
+Common commands can be called directly, without initializing a runner first:
+
+- `s5cmdpy.download_from_s3_list(...)`
+- `s5cmdpy.mv(...)`
+- `s5cmdpy.cp(...)`
+- `s5cmdpy.run(...)`
+- `s5cmdpy.sync(...)`
+- `s5cmdpy.ls(...)`
+
+```python
+# runner is initialized automatically
+import s5cmdpy
+s5cmdpy.run("some_runfile.txt")
+```
+
+
+
 ## License
 
 S5cmd itself is MIT licensed. This project is also MIT licensed.
-
