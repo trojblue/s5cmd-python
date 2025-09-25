@@ -13,6 +13,7 @@ For more information about s5cmd, please refer to the original [s5cmd](https://g
 - Handle file downloads from URLs and S3 URIs.
 - Generate command files for batch operations with `s5cmd`.
 - Simplify operations like copying and moving files between local paths and S3 URIs.
+- Support custom endpoint URL and credentials file via `configure()` or per-call args.
 
 ## Installation
 
@@ -39,6 +40,31 @@ Here are some examples of how to use the `S5CmdRunner` class:
 ```python
 from s5cmdpy import S5CmdRunner
 runner = S5CmdRunner()
+```
+
+### (Optional) Configure custom endpoint and credentials
+
+If you are using an S3-compatible endpoint (e.g., Cloudflare R2) or a custom credentials file for s5cmd, configure defaults once:
+
+```python
+import s5cmdpy
+
+s5cmdpy.configure(
+    endpoint_url="https://your-endpoint.example.com",
+    credentials_file="/path/to/s5cmd.cfg",
+)
+```
+
+All public APIs (`run`, `cp`, `mv`, `sync`, `ls`, `download_from_s3_list`) also accept `endpoint_url` and `credentials_file` per call if you prefer not to set global defaults:
+
+```python
+import s5cmdpy
+
+s5cmdpy.run(
+    "s3://bucket/commands.txt",
+    endpoint_url="https://your-endpoint.example.com",
+    credentials_file="/path/to/s5cmd.cfg",
+)
 ```
 
 ### Run s5cmd with a Local Command File
@@ -116,6 +142,7 @@ Common commands can be called directly, without initializing a runner first:
 - `s5cmdpy.run(...)`
 - `s5cmdpy.sync(...)`
 - `s5cmdpy.ls(...)`
+- `s5cmdpy.configure(endpoint_url=..., credentials_file=...)`
 
 ```python
 # runner is initialized automatically
