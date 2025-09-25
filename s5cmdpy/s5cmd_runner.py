@@ -45,20 +45,28 @@ class S5CmdRunner:
         # Optional defaults for s5cmd configuration
         self.default_endpoint_url = None
         self.default_credentials_file = None
+        self.default_region = None  # e.g., "apac" for Cloudflare R2
+        self.ignore_aws_profile = True  # avoid inheriting local AWS profile by default
         if not self.has_s5cmd():
             self.get_s5cmd()
 
-    def configure(self, endpoint_url: str = None, credentials_file: str = None) -> None:
+    def configure(self, endpoint_url: str = None, credentials_file: str = None, region: str = None, ignore_aws_profile: bool = None) -> None:
         """Configure default s5cmd options.
 
         Args:
             endpoint_url (str, optional): Custom S3-compatible endpoint URL.
             credentials_file (str, optional): Path to s5cmd credentials file.
+            region (str, optional): Region for the S3-compatible endpoint (e.g., Cloudflare R2: apac, wnam, weur, etc.).
+            ignore_aws_profile (bool, optional): If True, unset AWS_PROFILE/AWS_CONFIG_FILE in subprocess env.
         """
         if endpoint_url is not None:
             self.default_endpoint_url = endpoint_url
         if credentials_file is not None:
             self.default_credentials_file = credentials_file
+        if region is not None:
+            self.default_region = region
+        if ignore_aws_profile is not None:
+            self.ignore_aws_profile = ignore_aws_profile
         self.logger.info("Configured default endpoint/credentials for s5cmd.")
 
     def _build_base_args(self, endpoint_url: str = None, credentials_file: str = None):
@@ -71,6 +79,22 @@ class S5CmdRunner:
         if merged_endpoint:
             base_args.extend(["--endpoint-url", merged_endpoint])
         return base_args
+
+    def _build_env(self, endpoint_url: str = None, credentials_file: str = None, region: str = None):
+        """Build environment variables for s5cmd subprocess to prevent fallback to default AWS profile/region."""
+        merged_credentials = credentials_file if credentials_file is not None else self.default_credentials_file
+        merged_region = region if region is not None else self.default_region
+
+        env = os.environ.copy()
+        if merged_region:
+            env["AWS_REGION"] = merged_region
+            env["AWS_DEFAULT_REGION"] = merged_region
+        if merged_credentials:
+            env["AWS_SHARED_CREDENTIALS_FILE"] = merged_credentials
+        if self.ignore_aws_profile:
+            env.pop("AWS_PROFILE", None)
+            env.pop("AWS_CONFIG_FILE", None)
+        return env
 
     def has_s5cmd(self) -> bool:
         return os.path.exists(self.s5cmd_path) and os.access(self.s5cmd_path, os.X_OK)
@@ -104,7 +128,7 @@ class S5CmdRunner:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to download s5cmd: {e}")
 
-    def call_function(self, command: str, *args, capture_output=False):
+    def call_function(self, command: str, *args, capture_output=False, env=None):
         """
         return a process when capture_output is True, otherwise execute and return None.
         """
@@ -121,13 +145,13 @@ class S5CmdRunner:
         if capture_output:
             try:
                 process = subprocess.Popen(
-                    [command, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    [command, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
                 return process
             except Exception as e:
                 self.logger.error(f"Error starting subprocess: {e}")
                 return None
         else:
-            subprocess.run([command, *args])
+            subprocess.run([command, *args], env=env)
 
     @staticmethod
     def fast_list_hash(s3_uris: List[str]) -> str:
@@ -191,13 +215,13 @@ class S5CmdRunner:
             pbar.refresh()
 
     def download_from_s3_list(self, s3_uris: List[str], dest_dir: str, simplified_print: bool = True,
-                              endpoint_url: str = None, credentials_file: str = None):
+                              endpoint_url: str = None, credentials_file: str = None, region: str = None):
 
         command_file_path = self.generate_s5cmd_file(s3_uris, dest_dir)
 
         if simplified_print:
             process = self.call_function(
-                self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "run", command_file_path, capture_output=True)
+                self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "run", command_file_path, capture_output=True, env=self._build_env(endpoint_url, credentials_file, region))
             if process and process.stdout:
                 self._update_progress_bar(process, total=len(s3_uris))
             else:
@@ -208,7 +232,7 @@ class S5CmdRunner:
 
             self.logger.info(
                 f"Downloading {len(s3_uris)} files from S3 to {dest_dir}")
-            self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "run", command_file_path)
+            self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "run", command_file_path, env=self._build_env(endpoint_url, credentials_file, region))
             self.logger.info(
                 f"Downloaded {len(s3_uris)} files from S3 to {dest_dir}")
 
@@ -236,7 +260,7 @@ class S5CmdRunner:
         parsed_url = urlparse(url)
         return os.path.basename(parsed_url.path)
 
-    def download_file(self, uri: str, endpoint_url: str = None, credentials_file: str = None):
+    def download_file(self, uri: str, endpoint_url: str = None, credentials_file: str = None, region: str = None):
         """
         Download a file from a URI (S3 or HTTP/HTTPS URL) to a temporary local path, preserving the filename.
         Args:
@@ -248,7 +272,7 @@ class S5CmdRunner:
             local_filename = self.get_filename_from_url(
                 uri)  # Use the S3 key as the filename
             local_path = os.path.join('/tmp', local_filename)
-            self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "cp", uri, local_path)
+            self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "cp", uri, local_path, env=self._build_env(endpoint_url, credentials_file, region))
         elif re.match(r'https?://', uri):
             local_filename = self.get_filename_from_url(uri)
             local_path = os.path.join('/tmp', local_filename)
@@ -260,7 +284,7 @@ class S5CmdRunner:
             raise ValueError("Unsupported URI scheme")
         return local_path
 
-    def mv(self, from_str: str, to_str: str, endpoint_url: str = None, credentials_file: str = None):
+    def mv(self, from_str: str, to_str: str, endpoint_url: str = None, credentials_file: str = None, region: str = None):
         """
         Move a file from a local path to an S3 URI or from an S3 URI to a local path.
 
@@ -268,15 +292,15 @@ class S5CmdRunner:
             from_str (str): The source file path or S3 URI.
             to_str (str): The destination file path or S3 URI.
         """
-        self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "mv", from_str, to_str)
+        self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "mv", from_str, to_str, env=self._build_env(endpoint_url, credentials_file, region))
 
     def cp(self, from_str: str, to_str: str, simplified_print=False, report_interval=5,
-           endpoint_url: str = None, credentials_file: str = None):
+           endpoint_url: str = None, credentials_file: str = None, region: str = None):
 
         downloaded_path = None
         if re.match(r'https?://', from_str):
             # Download file for HTTP/HTTPS URIs and temporarily save the local path
-            downloaded_path = self.download_file(from_str, endpoint_url=endpoint_url, credentials_file=credentials_file)
+            downloaded_path = self.download_file(from_str, endpoint_url=endpoint_url, credentials_file=credentials_file, region=region)
             from_str = downloaded_path
 
         # Warning for uploading a file name instead of into a folder
@@ -291,19 +315,19 @@ class S5CmdRunner:
             if to_str.startswith('s3://'):
                 # If destination is S3, use s5cmd to upload
                 self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "cp",
-                                   downloaded_path, to_str)
+                                   downloaded_path, to_str, env=self._build_env(endpoint_url, credentials_file, region))
             else:
                 # If destination is local, use shutil.move
                 shutil.move(downloaded_path, to_str)
         elif from_str.startswith('s3://') and not to_str.startswith('s3://'):
             # Use s5cmd to copy from S3 to local path directly
-            self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "cp", from_str, to_str)
+            self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "cp", from_str, to_str, env=self._build_env(endpoint_url, credentials_file, region))
         else:
             # For all other cases, including S3 to S3, use call_function directly
             self.call_function(self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "cp", from_str, to_str)
 
     def run(self, txt_uri: str, simplified_print: bool = True, report_interval: int = 5, total=None,
-            endpoint_url: str = None, credentials_file: str = None):
+            endpoint_url: str = None, credentials_file: str = None, region: str = None):
         """
         Run s5cmd with a command file specified by a local path, URL, or S3 URI.
 
@@ -314,10 +338,10 @@ class S5CmdRunner:
         """
 
         if not self.is_local_file(txt_uri):
-            txt_uri = self.download_file(txt_uri, endpoint_url=endpoint_url, credentials_file=credentials_file)
+            txt_uri = self.download_file(txt_uri, endpoint_url=endpoint_url, credentials_file=credentials_file, region=region)
 
         process = self.call_function(
-            self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "run", txt_uri, capture_output=simplified_print)
+            self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "run", txt_uri, capture_output=simplified_print, env=self._build_env(endpoint_url, credentials_file, region))
 
         if simplified_print and process and process.stdout:
             # Pass total to the progress bar if provided
@@ -331,7 +355,7 @@ class S5CmdRunner:
                 "Failed to start s5cmd subprocess with output capture.")
 
     def sync(self, source: str, destination: str, simplified_print: bool = True, report_interval: int = 5,
-             endpoint_url: str = None, credentials_file: str = None):
+             endpoint_url: str = None, credentials_file: str = None, region: str = None):
         """
         Sync a folder to another folder using s5cmd.
 
@@ -363,7 +387,7 @@ class S5CmdRunner:
             self.logger.warning(f"Adjusted destination path: {destination}")
 
         process = self.call_function(
-            self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "sync", source, destination, capture_output=simplified_print)
+            self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "sync", source, destination, capture_output=simplified_print, env=self._build_env(endpoint_url, credentials_file, region))
         if simplified_print and process and process.stdout:
             # For sync, total could potentially be determined by listing source files ahead of time for a more accurate progress bar
             self._update_progress_bar(process, report_interval=report_interval)
@@ -375,7 +399,7 @@ class S5CmdRunner:
                 "Failed to start s5cmd subprocess with output capture.")
 
     def ls(self, s3_uri: str, report_interval: int = 5,
-           endpoint_url: str = None, credentials_file: str = None):
+           endpoint_url: str = None, credentials_file: str = None, region: str = None):
         """
         Lists objects in an S3 bucket and returns details in a structured format.
 
@@ -387,7 +411,7 @@ class S5CmdRunner:
             dict: A dictionary where keys are the paths of the files, and values are tuples containing size and date.
         """
         process = self.call_function(
-            self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "ls", s3_uri, capture_output=True)
+            self.s5cmd_path, *self._build_base_args(endpoint_url, credentials_file), "ls", s3_uri, capture_output=True, env=self._build_env(endpoint_url, credentials_file, region))
         if not process:
             self.logger.error(
                 "Failed to start s5cmd subprocess with output capture for listing.")
